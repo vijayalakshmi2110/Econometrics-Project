@@ -1,0 +1,364 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+install.packages("ggthemes")
+```
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+rm(list =ls(all=TRUE))
+library(haven)
+library(data.table)
+library(ggplot2)
+library(corrplot)
+library(Hmisc)
+library(gridExtra)
+library(ggthemes)
+library(ggplot2)
+```
+
+```{r}
+setwd("C:\\Users\\vijay\\Documents\\UTD\\Fall18\\Econometerics\\Project")
+data<- read_dta("car_fatalities.dta")
+#write.csv(data,'car_fatality.csv')
+```
+
+
+```{r}
+#install.packages('fBasics')
+library(fBasics)
+sum <- basicStats(data)
+write.csv(sum,'summary_stats.csv')
+summary(data)
+```
+
+NAs in jaild, comserd. Both are categorical so replacing the null with the max freqency varible at state level
+
+```{r}
+summary(is.na(data))
+```
+
+Imputing the NULL values
+
+```{r}
+jail <- data[,list(jailm = mean(jaild, na.rm=T)), by=list(state)]
+
+p <-ggplot(jail, aes(x=state, y=jailm,  color=jailm)) +
+  geom_point()  +labs(x = 'States', y = 'Avg. Jail ID', title = 'Jaild across states')
+p
+
+coms <- data[,list(com = mean(comserd, na.rm=T)), by=list(state)]
+
+p <-ggplot(coms, aes(x=state, y=com,  color=com)) +
+  geom_point()  +labs(x = 'States', y = 'Avg. Comser ID', title = 'Comserd across states')
+p
+
+
+s<-data$state[which(is.na(data$jaild)==T)]
+a<-data.frame(table(data$jaild[which(data$state==s)]))
+data$jaild[which(is.na(data$jaild)==T)]<-a$Var1[which.max(a$Freq)]
+
+s<-data$state[which(is.na(data$comserd)==T)]
+a<-data.frame(table(data$comserd[which(data$state==s)]))
+data$comserd[which(is.na(data$comserd)==T)]<-a$Var1[which.max(a$Freq)]
+summary(is.na(data))
+rm(a,s)
+rm(jail,coms,p)
+```
+
+```{r}
+res2 <- rcorr(as.matrix(data))
+res<-res2$r
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+```
+
+
+```{r}
+library(dplyr)
+library(data.table)
+fips<- read.csv('state_fips.csv')
+loc<- read.csv('statelatlong.csv')
+data1<-inner_join(data,fips)
+data<-data1
+rm(data1)
+data<-setDT(data)
+data$state_name<-tolower(data$state_name)
+colnames(data)[40]<-'region'
+```
+
+```{r}
+state1<-data[,list(mortality=sum(allmort)),by=list(state,region)]
+state_rate<-data[,list(mort_rate=mean(mrall)),by=list(state,region)]
+#str(state1)
+```
+
+
+```{r}
+library(maps)
+us_states <- map_data("state")
+#head(us_states)
+us_states<-data.table(us_states)
+us_center <- us_states[,list(latc=mean(lat),longc=mean(long)), by =list(group,region)]
+```
+
+```{r}
+state2<-inner_join(state1,us_states)
+state_rate2<-inner_join(state_rate,us_center)
+
+```
+
+
+```{r}
+p <- ggplot(data = state2,
+            aes(x = long, y = lat,
+                group = group, fill = mortality))
+
+p + geom_polygon(color = "gray90", size = 0.1) +
+    coord_map(projection = "albers", lat0 = 39, lat1 = 45) +labs(title = "Total_Mortality", fill = NULL) 
+
+
+p
+                                                              
+```
+```{r}
+plot1<- data[,list(mortality=sum(allmort)),by=list(year)]%>%
+  ggplot(aes(x=(year), y=mortality), group =1)+geom_line(colour = 'red')+geom_point()+
+  labs(x = 'Year', y = '# of Vehicle Facilities', title = '# of Vehicle Facilities across the years')
+plot1
+
+```
+
+Here we can seet that states like Texas and California which have the max. Martality rate, and these states don't have the jail policy imposed.
+
+```{r}
+jail <- data[,list(jailm = mean(jaild)), by=list(state,region)]
+jail1<- inner_join(jail,us_states)
+
+jp <- ggplot(data = jail1,
+            aes(x = long, y = lat,
+                group = group, fill = jailm ))
+
+pj<-jp + geom_polygon(color = "gray90", size = 0.1) +
+    coord_map(projection = "albers", lat0 = 39, lat1 = 45) +labs(title = "Jailed or not", fill = NULL) 
+jp1<- pj+ scale_fill_gradient2(low = "red",mid = scales::muted("purple"), high = "blue")
+jp2<- jp1 
+jp2
+
+```
+
+```{r}
+jail <- data[,list(jailm = mean(comserd)), by=list(state,region)]
+jail1<- inner_join(jail,us_states)
+
+jp <- ggplot(data = jail1,
+            aes(x = long, y = lat,
+                group = group, fill = jailm ))
+
+pj<-jp + geom_polygon(color = "gray90", size = 0.1) +
+    coord_map(projection = "albers", lat0 = 39, lat1 = 45) +labs(title = "Mandatory Community Service", fill = NULL) 
+jp1<- pj+ scale_fill_gradient2(low = "red",mid = scales::muted("purple"), high = "blue")
+jp2<- jp1 
+jp2
+```
+
+```{r}
+drink <- data[,list(drink_age=mean(mlda),a1517=sum(a1517),a1820=sum(a1820),a2124=sum(a2124)),by=list(state,region)]
+drink1<-melt.data.table(drink,id.var=c("state","region","drink_age"))
+
+#ggplot()+
+ # geom_bar(mapping=aes(x=reorder(state, gdp), y=gdp), stat = 'identity') +
+  #coord_flip()
+
+drink1<-data.frame(drink1)
+drink1 %>% ggplot( aes(x =factor(state)) )+geom_point(aes(y=drink_age), group =1 ,color ='Red')+ geom_line(aes(x=factor(state), y=drink_age), group =1 ,color ='Red')+
+  geom_bar(aes(y =value*30/5000, fill=variable),stat = "identity", position = "dodge") + scale_fill_brewer(palette = "Set1") + scale_y_continuous( sec.axis =sec_axis(~.*5000/30))
+
+
+summary(drink1)
+
+library(reshape)
+```
+```{r}
+mor <- data[,list(Mortality_Rate = mean(mrall),beer = mean(beertax)), by=list(state)]
+max(mor$beer)
+
+p <- ggplot(mor, aes(x = state))
+  p <- p + geom_line(aes(y = Mortality_Rate, colour = "Mortality Rate"))
+  
+  # adding the relative humidity data, transformed to match roughly the range of the temperature
+  p <- p + geom_line(aes(y = beer*.0004/2.5, colour = "Beer Tax"))
+  
+  # now adding the secondary axis, following the example in the help file ?scale_y_continuous
+  # and, very important, reverting the above transformation
+  p <- p +  scale_y_continuous(sec.axis = sec_axis(~.*2.5/0.0004, name = "Beer Tax")) + labs(title = 'Mortality vs Beer Tax')
+  p
+```
+
+```{r}
+his<-ggplot(data, aes(x=mrall)) + 
+  geom_histogram(color="black", fill="red") + labs("Histogram of Mortality Rate") +
+  ylab("Frequency") + xlab("Mortality_Rate")
+
+
+his1 <- ggplot(data, aes(x=log(mrall))) + 
+  geom_histogram(color="black", fill="red") + labs("Histogram of Mortality Rate") +
+  ylab("Frequency") + xlab("Log Mortality_Rate")
+library(gridExtra)
+grid.arrange(his, his1, nrow=2)
+```
+
+### Pooling
+```{r}
+library(plm)
+data1 <- pdata.frame(data.frame(data),index=c("state","year"))
+
+```
+```{r}
+model1_p <- plm(log(mrall)~spircons+unrate+perinc+beertax+mlda +dry+yngdrv + jaild+comserd+ mraidall+vmiles , model="pooling",data=data1)
+summary(model1_p)
+
+
+```
+
+```{r}
+model1_f <- plm(log(mrall)~spircons+unrate+perinc+beertax+mlda +dry+yngdrv + jaild+comserd+ mraidall+vmiles ,effect = "individual", model="within",index =c("state","year"),data=data1)
+summary(model1_f)
+```
+```{r}
+model1_t <- plm(log(mrall)~spircons+unrate+perinc+beertax+mlda +dry+yngdrv + jaild+comserd+ mraidall , model="within",index =c("state","year"),effect= 'twoways',data=data1)
+summary(model1_t)
+
+
+```
+
+Test for F between individual vs individual and time with year dummies.
+Result: Fixed effects with Time and Individual is better
+
+```{r}
+library(mltools)
+library(fastDummies)
+data1$year<-factor(data1$year)
+#data1[,year:=factor(year)]
+data11<-data.frame(data1)
+data2<-dummy_cols(data11,select_columns = "year",remove_first_dummy = TRUE)
+#data2$year<-NULL
+# stargazer(model1_f,model1_t, se= list(clse(model1_f), clse(model1_t)),
+#           title = "Panel Regressions, clustered SEs", type  = "Text",
+#           column.labels = c("Individual", "Twoways"),
+#           df = FALSE , digits = 4)
+
+
+model1_f1 <- plm(log(mrall)~spircons+unrate+perinc+dry+ mraidall+vmiles+beertax , model="within",effects = "individual", index =c("state","year"),data=data1)
+#summary(model1_f1)
+
+model1_t1 <- plm(log(mrall)~spircons+unrate+perinc+dry +mraidall+vmiles+beertax+year_1983+year_1984+year_1985+year_1986+year_1987+year_1988, model="within",index =c("state","year"),effects = 'twoways',data=data2)
+
+#summary(model1_t1)
+
+pFtest(model1_t1,model1_f1)
+```
+
+Tweaking the fixed effects with both state and time to get significant variables
+
+```{r}
+model_it_1 <- plm(log(mrall)~spircons+unrate+perinc+dry +mraidall+vmiles, model="within",index =c("state","year"),effects = 'twoways',data=data2)
+
+summary(model_it_1)
+
+
+```
+```{r}
+
+```
+
+```{r}
+model_it_1 <- plm(log(mrall)~spircons+unrate+perinc+dry +mraidall+vmiles+jaild+comserd  +gspch+sobapt, model="within",index =c("state","year"),effects = 'twoways',data=data2)
+
+summary(model_it_1)
+```
+```{r}
+model_it_1 <- plm(log(mrall)~spircons+unrate+perinc+dry +mraidall+vmiles  +gspch, model="within",effects = 'time',data=data2)
+
+summary(model_it_1)
+
+```
+
+
+
+```{r}
+model_it_1 <- plm(log(mralln)~spircons+unrate+perinc+dry +mraidall+vmiles +jaild+comserd +gspch+beertax, model="within",index =c("state","year"),effects = 'twoways',data=data2)
+
+summary(model_it_1)
+```
+
+```{r}
+model_it_1 <- plm(log(mralln)~spircons+dry +mraidall +gspch+beertax, model="within",index =c("state","year"),effects = 'twoways',data=data2)
+
+summary(model_it_1)
+```
+
+```{r}
+data2 <-pdata.frame(data.frame(data2),index=c("state","year"))
+data2<-plm.data(data,indexes=c("state","year"))
+
+```
+
+
+Time - state
+```{r}
+
+model_it_1 <- plm(mralln~spircons+dry +mraidall +gspch+beertax, model="within",effect = 'twoways',data=data2)
+
+summary(model_it_1)
+
+
+```
+```{r}
+
+
+```
+#### USe main from here .......
+
+
+```{r}
+
+
+
+model_it_2 <- plm(log(mrall)~mlda +jaild +comserd +beertax + spircons + perinc +miles+gspch    + unrate  , model="within",effect = 'twoways',data=data2)
+
+summary(model_it_2)
+
+
+
+
+
+library(lmtest)
+
+library(sandwich)
+
+
+
+model_it_2 <- plm(log(mrall)~beertax + spircons + perinc +gspch + unrate +dry +vmiles  , model="within",effect = 'twoways',data=data2)
+summary(model_it_2)
+
+
+model_it_2 <- plm(log(mrall)~beertax + spircons + perinc + unrate +vmiles  , model="within",effect = 'twoways',data=data2)
+summary(model_it_2)
+#coeftest(model_it_2,vcov=vcovHC(model_it_2,type="HC0",cluster="group"))
+
+```
+```{r}
+
+model_it_2 <- plm(log(mrall)~dry , model="pooling",data=data2)
+
+summary(model_it_2)
+
+```
+
+
